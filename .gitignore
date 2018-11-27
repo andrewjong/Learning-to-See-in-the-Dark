@@ -1,0 +1,10 @@
+logs
+.vscode
+.idea
+build
+dist
+checkpoint
+.ipynb_checkpoints
+result*
+*.spec
+sony_web*

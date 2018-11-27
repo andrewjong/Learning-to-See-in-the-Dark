@@ -1,21 +1,34 @@
 # uniform content loss + adaptive threshold + per_class_input + recursive G
 # improvement upon cqf37
 from __future__ import division
-import os, scipy.io
+import os, scipy, scipy.io
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 import rawpy
 import glob
+import argparse
 
-input_dir = './dataset/Sony/short/'
-gt_dir = './dataset/Sony/long/'
-checkpoint_dir = './checkpoint/Sony/'
-result_dir = './result_Sony/'
+parser = argparse.ArgumentParser(description="Test the sony model")
+parser.add_argument("-d", "--data_dir", default=os.path.join(".", "dataset"))
+parser.add_argument("-o", "--out_dir", default=os.path.join(".", "result_Sony"))
+parser.add_argument("-m", "--model_dir", default=os.path.join(".", "checkpoint"))
+
+args = parser.parse_args()
+
+
+input_dir = os.path.join(args.data_dir, "Sony", "short")
+print "input_dir", input_dir
+gt_dir = os.path.join(args.data_dir, 'Sony','long')
+print "gt_dir", gt_dir
+checkpoint_dir = os.path.join(args.model_dir, 'Sony')
+result_dir = args.out_dir
 
 # get test IDs
 test_fns = glob.glob(gt_dir + '/1*.ARW')
 test_ids = [int(os.path.basename(test_fn)[0:5]) for test_fn in test_fns]
+
+print "Test_ids", test_ids
 
 DEBUG = 0
 if DEBUG == 1:
@@ -113,12 +126,13 @@ if not os.path.isdir(result_dir + 'final/'):
 
 for test_id in test_ids:
     # test the first image in each sequence
-    in_files = glob.glob(input_dir + '%05d_00*.ARW' % test_id)
+    in_files = glob.glob(os.path.join(input_dir, '%05d_00*.ARW' % test_id))
+    print "in_files", in_files
     for k in range(len(in_files)):
         in_path = in_files[k]
         in_fn = os.path.basename(in_path)
         print(in_fn)
-        gt_files = glob.glob(gt_dir + '%05d_00*.ARW' % test_id)
+        gt_files = glob.glob(os.path.join(gt_dir, '%05d_00*.ARW' % test_id))
         gt_path = gt_files[0]
         gt_fn = os.path.basename(gt_path)
         in_exposure = float(in_fn[9:-5])
