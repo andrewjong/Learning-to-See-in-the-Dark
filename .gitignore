@@ -8,3 +8,6 @@ checkpoint
 result*
 *.spec
 sony_web*
+__pycache__
+output
+result_Sony

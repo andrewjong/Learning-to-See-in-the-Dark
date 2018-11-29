@@ -1,6 +1,6 @@
 # uniform content loss + adaptive threshold + per_class_input + recursive G
 # improvement upon cqf37
-from __future__ import division
+
 import os, time, scipy.io
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -114,7 +114,7 @@ saver = tf.train.Saver()
 sess.run(tf.global_variables_initializer())
 ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
 if ckpt:
-    print('loaded ' + ckpt.model_checkpoint_path)
+    print(('loaded ' + ckpt.model_checkpoint_path))
     saver.restore(sess, ckpt.model_checkpoint_path)
 
 # Raw data takes long time to load. Keep them in memory after loaded.
@@ -190,7 +190,7 @@ for epoch in range(lastepoch, 4001):
         output = np.minimum(np.maximum(output, 0), 1)
         g_loss[ind] = G_current
 
-        print("%d %d Loss=%.3f Time=%.3f" % (epoch, cnt, np.mean(g_loss[np.where(g_loss)]), time.time() - st))
+        print(("%d %d Loss=%.3f Time=%.3f" % (epoch, cnt, np.mean(g_loss[np.where(g_loss)]), time.time() - st)))
 
         if epoch % save_freq == 0:
             if not os.path.isdir(result_dir + '%04d' % epoch):

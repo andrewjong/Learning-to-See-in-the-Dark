@@ -9,31 +9,33 @@ import rawpy
 import glob
 import argparse
 
-parser = argparse.ArgumentParser(description="Test the sony model")
-parser.add_argument("-d", "--data_dir", default=os.path.join(".", "dataset"))
-parser.add_argument("-o", "--out_dir", default=os.path.join(".", "result_Sony"))
-parser.add_argument("-m", "--model_dir", default=os.path.join(".", "checkpoint"))
+# disable TF debugging
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+
+
+parser = argparse.ArgumentParser(description="Run inference to brighten the Sony raw photos.")
+parser.add_argument("input", help="Path to Sony raw input image, .ARW file")
+parser.add_argument(
+    "-o", "--out_dir", 
+    help="Output directory to store converted images (default: ./result_Sony)", 
+    default=os.path.join(".", "result_Sony")
+)
+parser.add_argument(
+    "-r", "--ratio", 
+    help="Ratio to brighten images by. Set this value to \
+    DESIRED_EXPOSURE/TAKEN_EXPOSURE. Note, values are capped at 300 (default: 100).", 
+    type=float, default=100
+)
+parser.add_argument(
+    "-m", "--model_dir", 
+    help="Directory of the TensorFlow model to use (default: ./checkpoint)", 
+    default=os.path.join(".", "checkpoint")
+)
 
 args = parser.parse_args()
 
-
-input_dir = os.path.join(args.data_dir, "Sony", "short")
-print("input_dir", input_dir)
-gt_dir = os.path.join(args.data_dir, 'Sony','long')
-print("gt_dir", gt_dir)
 checkpoint_dir = os.path.join(args.model_dir, 'Sony')
 result_dir = args.out_dir
-
-# get test IDs
-test_fns = glob.glob(gt_dir + '/1*.ARW')
-test_ids = [int(os.path.basename(test_fn)[0:5]) for test_fn in test_fns]
-
-print("Test_ids", test_ids)
-
-DEBUG = 0
-if DEBUG == 1:
-    save_freq = 2
-    test_ids = test_ids[0:5]
 
 
 def lrelu(x):
@@ -111,59 +113,40 @@ def pack_raw(raw):
 
 sess = tf.Session()
 in_image = tf.placeholder(tf.float32, [None, None, None, 4])
-gt_image = tf.placeholder(tf.float32, [None, None, None, 3])
 out_image = network(in_image)
 
 saver = tf.train.Saver()
 sess.run(tf.global_variables_initializer())
 ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
 if ckpt:
-    print(('loaded ' + ckpt.model_checkpoint_path))
+    print(('Loaded model from ' + ckpt.model_checkpoint_path))
     saver.restore(sess, ckpt.model_checkpoint_path)
 
-if not os.path.isdir(result_dir + 'final/'):
-    os.makedirs(result_dir + 'final/')
+if not os.path.isdir(result_dir):
+    os.makedirs(result_dir)
 
-for test_id in test_ids:
-    # test the first image in each sequence
-    in_files = glob.glob(os.path.join(input_dir, '%05d_00*.ARW' % test_id))
-    print("in_files", in_files)
-    for k in range(len(in_files)):
-        in_path = in_files[k]
-        in_fn = os.path.basename(in_path)
-        print(in_fn)
-        gt_files = glob.glob(os.path.join(gt_dir, '%05d_00*.ARW' % test_id))
-        gt_path = gt_files[0]
-        gt_fn = os.path.basename(gt_path)
-        in_exposure = float(in_fn[9:-5])
-        gt_exposure = float(gt_fn[9:-5])
-        ratio = min(gt_exposure / in_exposure, 300)
+print("Input path:", args.input)
+print("Brighten ratio set to:", args.ratio)
+in_path = args.input
+in_fname = os.path.basename(in_path)
+fname_no_extension = os.path.splitext(in_fname)[0]
+ratio = min(args.ratio, 300)
 
-        raw = rawpy.imread(in_path)
-        input_full = np.expand_dims(pack_raw(raw), axis=0) * ratio
+print("Reading raw photo...")
+raw = rawpy.imread(in_path)
+input_full = np.expand_dims(pack_raw(raw), axis=0) * ratio
+input_full = np.minimum(input_full, 1.0)
 
-        im = raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
-        # scale_full = np.expand_dims(np.float32(im/65535.0),axis = 0)*ratio
-        scale_full = np.expand_dims(np.float32(im / 65535.0), axis=0)
+print("Converting...")
+output = sess.run(out_image, feed_dict={in_image: input_full})
+output = np.minimum(np.maximum(output, 0), 1)
+print("Converted!")
 
-        gt_raw = rawpy.imread(gt_path)
-        im = gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
-        gt_full = np.expand_dims(np.float32(im / 65535.0), axis=0)
+# squeeze the batch dimension, so we get just 3 channels
+output = output[0, :, :, :]
 
-        input_full = np.minimum(input_full, 1.0)
-
-        output = sess.run(out_image, feed_dict={in_image: input_full})
-        output = np.minimum(np.maximum(output, 0), 1)
-
-        output = output[0, :, :, :]
-        gt_full = gt_full[0, :, :, :]
-        scale_full = scale_full[0, :, :, :]
-        scale_full = scale_full * np.mean(gt_full) / np.mean(
-            scale_full)  # scale the low-light image to the same mean of the groundtruth
-
-        scipy.misc.toimage(output * 255, high=255, low=0, cmin=0, cmax=255).save(
-            result_dir + 'final/%5d_00_%d_out.png' % (test_id, ratio))
-        scipy.misc.toimage(scale_full * 255, high=255, low=0, cmin=0, cmax=255).save(
-            result_dir + 'final/%5d_00_%d_scale.png' % (test_id, ratio))
-        scipy.misc.toimage(gt_full * 255, high=255, low=0, cmin=0, cmax=255).save(
-            result_dir + 'final/%5d_00_%d_gt.png' % (test_id, ratio))
+# save the image
+out_path = os.path.join(result_dir, f"{fname_no_extension}_out.png")
+print(f"Saving output to {out_path}")
+scipy.misc.toimage(output * 255, high=255, low=0, cmin=0, cmax=255).save(out_path)
+print(f"Output saved! Done.")
